@@ -1,0 +1,2 @@
+pytube==10.7.2
+requests==2.26.0
