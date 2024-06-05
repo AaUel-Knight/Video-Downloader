@@ -1,20 +1,16 @@
-import tkinter as tk
-from tkinter import filedialog
 import os
-import subprocess
-from pytube import YouTube
-import random
-import requests
 import re
-import string
-
-BASE_DIR = os.getcwd()
+import requests
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from pytube import YouTube
+from time import time
 
 def foldertitle(url):
     try:
         res = requests.get(url)
     except:
-        print('no internet')
+        messagebox.showerror('Error', 'No internet connection')
         return False
     plain_text = res.text
 
@@ -22,7 +18,7 @@ def foldertitle(url):
         eq = url.rfind('=') + 1
         cPL = url[eq:]
     else:
-        print('Incorrect attempt.')
+        messagebox.showerror('Error', 'Incorrect playlist URL')
         return False
     return cPL
 
@@ -31,7 +27,7 @@ def link_snatcher(url):
     try:
         res = requests.get(url)
     except:
-        print('no internet')
+        messagebox.showerror('Error', 'No internet connection')
         return False
 
     plain_text = res.text
@@ -40,7 +36,7 @@ def link_snatcher(url):
         eq = url.rfind('=') + 1
         cPL = url[eq:]
     else:
-        print('Incorrect Playlist.')
+        messagebox.showerror('Error', 'Incorrect playlist URL')
         return False
 
     tmp_mat = re.compile(r'watch\?v=\S+?list=' + cPL)
@@ -53,71 +49,96 @@ def link_snatcher(url):
             our_links.append(work_m)
     return our_links
 
-def download_file():
-    url = url_entry.get()
-    our_links = link_snatcher(url)
-    SAVEPATH = save_path_entry.get()
-    user_res = user_res_entry.get() 
-    
-    os.chdir(BASE_DIR)
+def update_progress(stream, chunk, file_handle, bytes_remaining, file_size, start_time, progress_bar, label_status, video_title):
+    bytes_downloaded = file_size - bytes_remaining
+    progress = (bytes_downloaded / file_size) * 100
+    elapsed_time = time() - start_time
+    download_speed = bytes_downloaded / elapsed_time / 1024  # KB/s
+    remaining_time = (bytes_remaining / download_speed / 1024) if download_speed != 0 else 0  # seconds
+    progress_bar['value'] = progress
+    label_status.config(text=f'Downloading: {video_title} - {round(progress, 2)}% '
+                             f'- Speed: {round(download_speed, 2)} KB/s, Remaining: {int(remaining_time)} s')
+    root.update_idletasks()
+
+def download_video(yt, resolution, save_path, progress_bar, label_status):
     try:
-        os.mkdir(SAVEPATH[:7])
-    except:
-        print('folder already exists')
-    
-    os.chdir(SAVEPATH[:7])
-    x = []
-    for root, dirs, files in os.walk(".", topdown=False):
-        for name in files:
-            pathh = os.path.join(root, name)
-            if os.path.getsize(pathh) < 1:
-                os.remove(pathh)
-            else:
-                x.append(str(name))
-    
+        video_title = yt.title
+        main_title = video_title + '.mp4'
+        main_title = main_title.replace('|', '')
+        save_file_path = os.path.join(save_path, main_title)
+
+        vid = yt.streams.filter(progressive=True, file_extension='mp4', res=resolution).first()
+        file_size = vid.filesize
+        start_time = time()
+
+        with open(save_file_path, 'wb') as file_handle:
+            for chunk in vid.stream_to_buffer():
+                file_handle.write(chunk)
+                update_progress(vid, chunk, file_handle, vid.filesize - file_handle.tell(), file_size, start_time, progress_bar, label_status, video_title)
+
+        progress_bar['value'] = 100
+        label_status.config(text=f'Completed: {video_title}')
+    except Exception as e:
+        label_status.config(text=f'Error: {str(e)}')
+
+def start_download():
+    url = entry_url.get()
+    resolution = combobox_resolution.get()
+    save_path = filedialog.askdirectory()
+
+    if not url or not resolution or not save_path:
+        messagebox.showerror('Error', 'Please fill in all fields and select a folder')
+        return
+
+    our_links = link_snatcher(url)
+    if not our_links:
+        return
+
     for link in our_links:
         try:
             yt = YouTube(link)
-            main_title = yt.title
-            main_title = main_title + '.mp4'
-            main_title = main_title.replace('|', '')
-        except:
-            print('connection problem..unable to fetch video info')
-            break
-        if main_title not in x:
-            if user_res == '360p' or user_res == '720p':
-                vid = yt.streams.filter(progressive=True, file_extension='mp4', res=user_res).first()
-                print('Downloading. . . ' + vid.default_filename + ' and its file size -> ' + str(round(vid.filesize / (1024 * 1024), 2)) + ' MB.')
-                progress_text.set(f'Downloading. . . {vid.default_filename} and its file size -> {str(round(vid.filesize / (1024 * 1024), 2))} MB.')
-                vid.download(SAVEPATH)
-                progress_text.set('Playlist Downloaded')
-            else:
-                print('something is wrong.. please rerun the script')
+        except Exception as e:
+            label_status.config(text=f'Error fetching video info: {str(e)}')
+            return
+
+        main_title = yt.title + '.mp4'
+        main_title = main_title.replace('|', '')
+        save_file_path = os.path.join(save_path, main_title)
+
+        if not os.path.exists(save_file_path):
+            download_video(yt, resolution, save_file_path, progress_bar, label_status)
         else:
-            print(f'\n skipping "{main_title}" video \n')
+            label_status.config(text=f'Skipping: {main_title} (already exists)')
 
-#    window.destroy()
+    label_status.config(text='All downloads completed')
 
-window = tk.Tk()
-window.title("Playlist Downloader")
-url_label = tk.Label(window, text="Enter Playlist URL:", width=100)
-url_label.pack()
-url_entry = tk.Entry(window, width=75)
-url_entry.pack()
-save_path_label = tk.Label(window, text="Enter Save Path:")
-save_path_label.pack()
-save_path_entry = tk.Entry(window, width=75)
-save_path_entry.pack()
-resolution_label = tk.Label(window, text="Choose Resolution (360p or 720p):")
-resolution_label.pack()
-user_res_entry = tk.Entry(window, width=75)
-user_res_entry.pack()
-download_button = tk.Button(window, text="Download Playlist", command=download_file)
-download_button.pack()
-progress_text = tk.StringVar()
-space = tk.Label(window, text="     ", height=3)
-space.pack()
-text_label = tk.Label(window, textvariable=progress_text)
-text_label.pack()
-window.mainloop()
+# Set up the GUI
+root = tk.Tk()
+root.title("YouTube Playlist Downloader")
 
+frame = ttk.Frame(root, padding="10")
+frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+label_url = ttk.Label(frame, text="Playlist URL:")
+label_url.grid(row=0, column=0, pady=5)
+
+entry_url = ttk.Entry(frame, width=40)
+entry_url.grid(row=0, column=1, pady=5)
+
+label_resolution = ttk.Label(frame, text="Resolution:")
+label_resolution.grid(row=1, column=0, pady=5)
+
+combobox_resolution = ttk.Combobox(frame, values=["360p", "720p"])
+combobox_resolution.grid(row=1, column=1, pady=5)
+combobox_resolution.current(0)
+
+button_download = ttk.Button(frame, text="Download", command=start_download)
+button_download.grid(row=2, column=1, pady=10)
+
+progress_bar = ttk.Progressbar(frame, orient="horizontal", length=300, mode="determinate")
+progress_bar.grid(row=3, column=0, columnspan=2, pady=10)
+
+label_status = ttk.Label(frame, text="")
+label_status.grid(row=4, column=0, columnspan=2)
+
+root.mainloop()
