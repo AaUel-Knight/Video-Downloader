@@ -1,4 +1,3 @@
-
 import os
 from pytube import YouTube
 
@@ -8,8 +7,9 @@ def video_downloader(url, resolution, save_path):
         main_title = yt.title
         main_title = main_title + '.mp4'
         main_title = main_title.replace('|', '')
+        # You can check available resolutions using: )
         vid = yt.streams.filter(progressive=True, file_extension='mp4', res=resolution).first()
-        #print(yt.streams.all())
+        print(yt.streams.all())
         save_folder = os.path.join(save_path, 'videos')
         os.makedirs(save_folder, exist_ok=True)
         save_path = os.path.join(save_folder, main_title)
@@ -34,3 +34,4 @@ print('\nConnecting . . .\n')
 video_downloader(url, user_res, save_path)
 print('Downloading finished')
 print(f'\nYour video is saved at --> {os.path.join(save_path, "videos")}')
+
